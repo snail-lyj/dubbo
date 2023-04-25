@@ -61,17 +61,6 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * type类上是否直接有@SPI注解
-     * @param type 指定类
-     * @return true type上直接有@SPI注解， 否则返回false
-     *
-     */
-    private static <T> boolean withExtensionAnnotation(Class<T> type) {
-        return type.isAnnotationPresent(SPI.class);
-    }
-
-
-    /**
      * 实例方法：先获取扩展类加载器，表明该接口是dubbo扩展接口。
      * 然后用扩展类加载器获取扩展点
      * 获取扩展点
@@ -95,5 +84,15 @@ public class ExtensionLoader<T> {
      */
     public T getExtension(String name) {
         return null;
+    }
+
+    /**
+     * type类上是否直接有@SPI注解
+     * @param type 指定类
+     * @return true type上直接有@SPI注解， 否则返回false
+     *
+     */
+    private static <T> boolean withExtensionAnnotation(Class<T> type) {
+        return type.isAnnotationPresent(SPI.class);
     }
 }
