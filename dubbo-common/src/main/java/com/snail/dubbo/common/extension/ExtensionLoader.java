@@ -1,5 +1,6 @@
 package com.snail.dubbo.common.extension;
 
+import com.snail.dubbo.common.Extension;
 import com.snail.dubbo.common.utils.ClassUtil;
 import com.snail.dubbo.common.utils.Holder;
 import com.snail.dubbo.common.utils.StringUtil;
@@ -14,6 +15,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
 
 /**
  * 框架设计： 经常会使用到有状态的对象
@@ -39,6 +41,12 @@ public class ExtensionLoader<T> {
     private final Map<String, Holder<T>> cachedInstances = new HashMap<>(128);
 
     private final Holder<Map<String, Class<T>>> cachedClasses = new Holder<>();
+
+    /**
+     * 缓存扩展接口实现类的别名
+     */
+    private final ConcurrentMap<Class<?>, String> cachedNames = new ConcurrentHashMap<Class<?>, String>();
+
 
 
     private final LoadingStrategy[] loadingStrategies = new LoadingStrategy[];
@@ -203,7 +211,9 @@ public class ExtensionLoader<T> {
     }
 
     /**
-     * resourceURL 资源中数据的格式， key = value; key表示扩展接口实现类的别名， value表示 扩展接口实现类的全程
+     * resourceURL 资源中数据的格式，
+     * key = value; key表示扩展接口实现类的别名， value表示 扩展接口实现类的全程
+     * 也可以只有value没有key
      * 可以写# 号， #号表示注释， 只支持单行注释。
      * 也会存在空格的情况。
      *
@@ -237,14 +247,79 @@ public class ExtensionLoader<T> {
                     } else {
                         clazz = line;
                     }
-                    if (!StringUtil.isEmpty(clazz)) {
-                        System.out.println(clazz);
+
+                    loadClass(extensionClasses, Class.forName(clazz));
+                }
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * extensionClasses 中存储key和类，因此需要解析出 key和类名
+     *
+     * 扩展类实现类key的生成规则
+     * 1、在SPI文件中指定
+     * 2、在扩展类实现类中加上@Extension注解，来指定该扩展类实现类的key
+     * @param extensionClasses
+     * @param clazz
+     */
+    private void loadClass(Map<String, Class<T>> extensionClasses, Class<T> clazz, String name) {
+        // 判断当前的Class对象所表示的类，是不是参数中传递的Class对象所表示的类的父类，超接口，或者是相同的类型。是则返回true，否则返回false。
+        if (!type.isAssignableFrom(clazz)) {
+            // clazz 不是type的子类或者实现
+            throw new IllegalArgumentException("error when load extension class (interface: " + type.getName() +  ", class line: " + clazz.getName() + ") class" +  clazz.getName() + "is not subtype of interface");
+        }
+
+        if (clazz.isAnnotationPresent(Adaptive.class)) {
+
+        } else if (isWrapperClass(clazz)) {
+
+        } else {
+            // 没有Adaptive注解，也没有包裹类，也就是普通的扩展实现类
+
+            if (StringUtil.isEmpty(name)) {
+                name = findAnnotationName(clazz);
+                if (StringUtil.isEmpty(name)) {
+                    throw new IllegalArgumentException("No such extension name for the class " + clazz.getName() + "in the config " + resourceURL);
+                }
+            }
+            // name 可能是多个别名， 用逗号隔开的， 逗号前后可能会有空格
+            String NAME_SEPARATOR = "\\s*[,]\\s*";
+            String[] names = NAME_SEPARATOR.split(name);
+            if (names != null && names.length > 0) {
+                for (String n : names) {
+                    Class<?> c = extensionClasses.get(n);
+                    if (c == null) {
+                        extensionClasses.put(n, clazz);
+                    } else if (c != clazz) {
+                        throw new IllegalStateException("Duplicate extension " + type.getName() + " name " + n + " on " + c.getName() + " and " + clazz.getName());
                     }
                 }
             }
-        } catch (IOException e) {
-            e.printStackTrace();
         }
+
+    }
+
+    /**
+     * 获取扩展类实现类的别名
+     * 1、获取Extension注解上指定的别名
+     * 2、如果不存在， 类名截取
+     * 3、可以为一个扩展接口实现类定义多个别名  用逗号隔开即可
+     * @param clazz
+     * @return
+     */
+    private String findAnnotationName(Class<T> clazz) {
+        Extension annotation = clazz.getAnnotation(Extension.class);
+        if (annotation != null) {
+            String name = clazz.getSimpleName();
+            if (name.endsWith(type.getSimpleName())) {
+                name = name.substring(0, name.length() - type.getSimpleName().length());
+            }
+            return name.toLowerCase();
+        }
+        return annotation.value();
     }
 
     private ClassLoader findClassLoader() {
